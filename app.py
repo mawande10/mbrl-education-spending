@@ -1576,22 +1576,3 @@ st.download_button(
 # ============================================================
 
 
-### After replacing `app.py`
-
-Commit the file in GitHub and let Streamlit redeploy.
-
-You should now see this sequence:
-
-1. **Excel uploaded successfully**
-2. **X transitions created for the MBRL world model**
-3. **Running MBRL policy optimisation...**
-4. **MBRL optimisation completed: X MBRL values calculated**
-5. **Calculation Check**
-6. **MBRL Results**
-7. **Spending State Summary**
-8. **World Model Validation**
-9. **Download MBRL Results Excel**
-
-The most important diagnostic is **“MBRL calculated”**. For a 5-country × 2015–2025 dataset with complete observations, it should be approximately **55**.
-
-If it still gets stuck after this clean version, the next thing to inspect is the **actual Excel workbook**, because then we can determine whether the problem is coming from the uploaded data rather than duplicate/slow Python code.
