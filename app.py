@@ -1,4 +1,4 @@
-
+```python
 import io
 import numpy as np
 import pandas as pd
@@ -9,7 +9,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 # ============================================================
-# PAGE
+# STREAMLIT PAGE
 # ============================================================
 
 st.set_page_config(
@@ -20,21 +20,18 @@ st.set_page_config(
 st.title("MBRL Education Spending Assessment")
 
 st.write(
-    "Upload World Bank education expenditure data → "
+    "World Bank Education Spending → "
     "MBRL-derived % GDP → Deviation → Spending State"
 )
 
 
 # ============================================================
-# SIDEBAR PARAMETERS
+# MBRL PARAMETERS
 # ============================================================
 
-st.sidebar.header("MBRL Parameters")
-
-# Fixed operational threshold = 10%
 TAU = 0.10
 
-st.sidebar.success("Classification threshold: ±10%")
+st.sidebar.header("Model Parameters")
 
 trees = st.sidebar.slider(
     "World-model trees",
@@ -44,14 +41,14 @@ trees = st.sidebar.slider(
     step=50
 )
 
-st.sidebar.write("τ = 10%")
+st.sidebar.write("Classification threshold: ±10%")
 
 
 # ============================================================
-# FILE UPLOAD
+# EXCEL UPLOAD
 # ============================================================
 
-up = st.file_uploader(
+uploaded_file = st.file_uploader(
     "Upload Top 5 African Countries Excel Dataset",
     type=["xlsx"]
 )
@@ -118,39 +115,38 @@ ALIASES = {
 
 
 # ============================================================
-# COLUMN FINDER
+# FIND COLUMN
 # ============================================================
 
-def find_column(df, possible_names):
+def find_column(dataframe, possible_names):
 
-    normalized = {
-        str(c).strip().lower(): c
-        for c in df.columns
+    columns = {
+        str(column).strip().lower(): column
+        for column in dataframe.columns
     }
 
     for name in possible_names:
 
         key = name.strip().lower()
 
-        if key in normalized:
-            return normalized[key]
+        if key in columns:
+            return columns[key]
 
     return None
 
 
 # ============================================================
-# INSTRUCTIONS BEFORE UPLOAD
+# NO FILE UPLOADED
 # ============================================================
 
-if up is None:
+if uploaded_file is None:
 
     st.info(
-        "Upload an Excel file containing at least: "
+        "Upload an Excel file containing at least "
         "Country, Year and Actual WB % GDP."
     )
 
     example = pd.DataFrame({
-
         "Country": [
             "South Africa",
             "South Africa",
@@ -179,7 +175,7 @@ if up is None:
         ]
     })
 
-    st.subheader("Expected Excel structure")
+    st.subheader("Required Excel format")
 
     st.dataframe(
         example,
@@ -196,93 +192,109 @@ if up is None:
 
 try:
 
-    raw = pd.read_excel(up)
+    raw = pd.read_excel(
+        uploaded_file
+    )
 
-except Exception as e:
+except Exception as error:
 
-    st.error(f"Could not read Excel file: {e}")
+    st.error(
+        f"Unable to read the Excel file: {error}"
+    )
+
     st.stop()
 
 
 st.success(
-    f"Excel uploaded successfully: {len(raw):,} rows"
+    f"Excel uploaded successfully: {len(raw)} rows"
 )
 
 
 # ============================================================
-# DISPLAY ORIGINAL COLUMNS
+# SHOW ORIGINAL COLUMNS
 # ============================================================
 
-with st.expander("Uploaded Excel columns"):
+with st.expander("View uploaded Excel columns"):
 
-    st.write(list(raw.columns))
+    st.write(
+        list(raw.columns)
+    )
 
 
 # ============================================================
-# IDENTIFY REQUIRED COLUMNS
+# FIND REQUIRED COLUMNS
 # ============================================================
 
-country_col = find_column(
+country_column = find_column(
     raw,
     ALIASES["Country"]
 )
 
-year_col = find_column(
+year_column = find_column(
     raw,
     ALIASES["Year"]
 )
 
-actual_col = find_column(
+actual_column = find_column(
     raw,
     ALIASES["Actual"]
 )
 
 
-# ============================================================
-# CHECK REQUIRED COLUMNS
-# ============================================================
-
-missing = []
-
-if country_col is None:
-    missing.append("Country")
-
-if year_col is None:
-    missing.append("Year")
-
-if actual_col is None:
-    missing.append("Actual WB % GDP")
+missing_columns = []
 
 
-if missing:
-
-    st.error(
-        "The following required columns were not detected: "
-        + ", ".join(missing)
+if country_column is None:
+    missing_columns.append(
+        "Country"
     )
 
-    st.write("Columns detected in your Excel file:")
 
-    st.write(list(raw.columns))
+if year_column is None:
+    missing_columns.append(
+        "Year"
+    )
+
+
+if actual_column is None:
+    missing_columns.append(
+        "Actual WB % GDP"
+    )
+
+
+if missing_columns:
+
+    st.error(
+        "Required columns not found: "
+        + ", ".join(missing_columns)
+    )
+
+    st.write(
+        "Your Excel contains these columns:"
+    )
+
+    st.write(
+        list(raw.columns)
+    )
 
     st.stop()
 
 
 # ============================================================
-# STANDARDISE DATASET
+# STANDARDISE REQUIRED COLUMNS
 # ============================================================
 
 df = raw.rename(
     columns={
-        country_col: "Country",
-        year_col: "Year",
-        actual_col: "Actual_WB_GDP"
+        country_column: "Country",
+        year_column: "Year",
+        actual_column: "Actual_WB_GDP"
     }
 ).copy()
 
 
 # ============================================================
-# OPTIONAL VARIABLES
+# FIND OPTIONAL VARIABLES
 # ============================================================
 
 for variable in [
@@ -293,21 +305,25 @@ for variable in [
     "EduGov"
 ]:
 
-    c = find_column(
+    column = find_column(
         df,
         ALIASES[variable]
     )
 
-    if c is not None and c != variable:
+    if column is not None:
 
-        df.rename(
-            columns={c: variable},
-            inplace=True
-        )
+        if column != variable:
+
+            df.rename(
+                columns={
+                    column: variable
+                },
+                inplace=True
+            )
 
 
 # ============================================================
-# CLEAN DATA
+# CLEAN REQUIRED VARIABLES
 # ============================================================
 
 df["Country"] = (
@@ -316,10 +332,12 @@ df["Country"] = (
     .str.strip()
 )
 
+
 df["Year"] = pd.to_numeric(
     df["Year"],
     errors="coerce"
 )
+
 
 df["Actual_WB_GDP"] = pd.to_numeric(
     df["Actual_WB_GDP"],
@@ -327,18 +345,25 @@ df["Actual_WB_GDP"] = pd.to_numeric(
 )
 
 
-for c in [
+# ============================================================
+# CLEAN OPTIONAL VARIABLES
+# ============================================================
+
+optional_columns = [
     "GDP",
     "GDP_Growth",
     "GDP_pc",
     "Population",
     "EduGov"
-]:
+]
 
-    if c in df.columns:
 
-        df[c] = pd.to_numeric(
-            df[c],
+for column in optional_columns:
+
+    if column in df.columns:
+
+        df[column] = pd.to_numeric(
+            df[column],
             errors="coerce"
         )
 
@@ -351,11 +376,15 @@ df = df[
     df["Year"].notna()
 ].copy()
 
-df["Year"] = df["Year"].astype(int)
+
+df["Year"] = (
+    df["Year"]
+    .astype(int)
+)
 
 
 # ============================================================
-# SORT
+# SORT DATA
 # ============================================================
 
 df = (
@@ -368,48 +397,61 @@ df = (
 
 
 # ============================================================
-# SHOW DATA SUMMARY
+# DATA SUMMARY
 # ============================================================
 
-countries = df["Country"].nunique()
+number_countries = (
+    df["Country"]
+    .nunique()
+)
 
-years = df["Year"].nunique()
+number_years = (
+    df["Year"]
+    .nunique()
+)
 
-valid_actual = df["Actual_WB_GDP"].notna().sum()
+number_valid = (
+    df["Actual_WB_GDP"]
+    .notna()
+    .sum()
+)
+
 
 st.info(
-    f"Countries: {countries} | "
-    f"Years: {years} | "
-    f"Valid education observations: {valid_actual}"
+    f"Countries: {number_countries} | "
+    f"Years: {number_years} | "
+    f"Valid WB observations: {number_valid}"
 )
 
 
 # ============================================================
-# CREATE TEMPORAL FEATURES
+# CREATE LAG FEATURES
 # ============================================================
 
-group = df.groupby(
+grouped = df.groupby(
     "Country",
     group_keys=False
 )
 
 
 df["Lag1"] = (
-    group["Actual_WB_GDP"]
+    grouped["Actual_WB_GDP"]
     .shift(1)
 )
 
+
 df["Lag2"] = (
-    group["Actual_WB_GDP"]
+    grouped["Actual_WB_GDP"]
     .shift(2)
 )
 
 
 df["Roll3"] = (
-    group["Actual_WB_GDP"]
+    grouped["Actual_WB_GDP"]
     .transform(
-        lambda s:
-        s.shift(1)
+        lambda series:
+        series
+        .shift(1)
         .rolling(
             window=3,
             min_periods=1
@@ -419,19 +461,23 @@ df["Roll3"] = (
 )
 
 
-year_min = df["Year"].min()
+# ============================================================
+# NORMALISED YEAR
+# ============================================================
 
-year_max = df["Year"].max()
+minimum_year = df["Year"].min()
 
-year_range = max(
+maximum_year = df["Year"].max()
+
+year_difference = max(
     1,
-    year_max - year_min
+    maximum_year - minimum_year
 )
 
 
 df["YearNorm"] = (
-    (df["Year"] - year_min)
-    / year_range
+    (df["Year"] - minimum_year)
+    / year_difference
 )
 
 
@@ -441,7 +487,9 @@ df["YearNorm"] = (
 
 extra_features = [
 
-    c for c in [
+    column
+
+    for column in [
         "GDP",
         "GDP_Growth",
         "GDP_pc",
@@ -449,12 +497,12 @@ extra_features = [
         "EduGov"
     ]
 
-    if c in df.columns
+    if column in df.columns
 ]
 
 
 # ============================================================
-# WORLD MODEL FEATURES
+# MBRL WORLD MODEL FEATURES
 # ============================================================
 
 features = [
@@ -467,98 +515,123 @@ features = [
 
 
 # ============================================================
-# BUILD TRANSITION DATA
+# BUILD TRANSITIONS
 #
-# State_t + Action_t → Education spending at t+1
+# State(t) + Action(t)
+#          ↓
+# World Model
+#          ↓
+# Education Spending(t+1)
 # ============================================================
 
-transitions = []
+transition_rows = []
 
 
-for country, x in df.groupby("Country"):
+for country, country_data in df.groupby(
+    "Country"
+):
 
-    x = (
-        x
+    country_data = (
+        country_data
         .sort_values("Year")
         .reset_index(drop=True)
     )
 
-    for i in range(len(x) - 1):
 
-        current = x.iloc[i]
+    for i in range(
+        len(country_data) - 1
+    ):
 
-        nxt = x.iloc[i + 1]
+        current = country_data.iloc[i]
 
-        # Both current and next observations
-        # must contain actual WB values
-        if pd.isna(current["Actual_WB_GDP"]):
+        next_row = country_data.iloc[i + 1]
+
+
+        if pd.isna(
+            current["Actual_WB_GDP"]
+        ):
+
             continue
 
-        if pd.isna(nxt["Actual_WB_GDP"]):
+
+        if pd.isna(
+            next_row["Actual_WB_GDP"]
+        ):
+
             continue
 
 
         row = {}
 
-        for f in features:
 
-            if f == "Action":
+        for feature in features:
 
-                row[f] = current["Actual_WB_GDP"]
+            if feature == "Action":
+
+                row[feature] = (
+                    current["Actual_WB_GDP"]
+                )
 
             else:
 
-                row[f] = current.get(
-                    f,
+                row[feature] = current.get(
+                    feature,
                     np.nan
                 )
 
 
-        row["Target"] = nxt["Actual_WB_GDP"]
+        row["Target"] = (
+            next_row["Actual_WB_GDP"]
+        )
 
-        transitions.append(row)
+
+        transition_rows.append(
+            row
+        )
 
 
 # ============================================================
 # TRANSITION DATAFRAME
 # ============================================================
 
-trans = pd.DataFrame(
-    transitions
+transitions = pd.DataFrame(
+    transition_rows
 )
 
 
-# ============================================================
-# CHECK TRANSITIONS
-# ============================================================
-
-if len(trans) < 5:
+if len(transitions) < 5:
 
     st.error(
-        f"Only {len(trans)} usable transitions were created. "
-        "At least 5 are required to train the world model."
+        f"Only {len(transitions)} usable "
+        "transitions were created."
     )
 
-    st.write(
-        "For best results use Top 5 African countries "
-        "with annual observations from 2015–2025."
+    st.warning(
+        "The dataset needs at least 5 usable "
+        "year-to-year observations."
     )
 
     st.stop()
 
 
 st.success(
-    f"World model training transitions: {len(trans)}"
+    f"{len(transitions)} transitions created "
+    "for the MBRL world model."
 )
 
 
 # ============================================================
-# PREPARE MODEL DATA
+# MODEL DATA
 # ============================================================
 
-X = trans[features].copy()
+X = transitions[
+    features
+].copy()
 
-y = trans["Target"].copy()
+
+y = transitions[
+    "Target"
+].copy()
 
 
 X = X.replace(
@@ -568,16 +641,16 @@ X = X.replace(
 
 
 # ============================================================
-# IMPUTE MODEL FEATURES
+# MEDIAN IMPUTATION
 # ============================================================
 
-medians = X.median(
+feature_medians = X.median(
     numeric_only=True
 )
 
 
 X = X.fillna(
-    medians
+    feature_medians
 )
 
 
@@ -588,34 +661,45 @@ X = X.fillna(0)
 # TRAIN / TEST SPLIT
 # ============================================================
 
-split = int(
+split_point = int(
     len(X) * 0.80
 )
 
 
-split = max(
+split_point = max(
     1,
     min(
-        split,
+        split_point,
         len(X) - 1
     )
 )
 
 
-X_train = X.iloc[:split]
+X_train = X.iloc[
+    :split_point
+]
 
-X_test = X.iloc[split:]
 
-y_train = y.iloc[:split]
+X_test = X.iloc[
+    split_point:
+]
 
-y_test = y.iloc[split:]
+
+y_train = y.iloc[
+    :split_point
+]
+
+
+y_test = y.iloc[
+    split_point:
+]
 
 
 # ============================================================
 # RANDOM FOREST WORLD MODEL
 # ============================================================
 
-model = RandomForestRegressor(
+world_model = RandomForestRegressor(
 
     n_estimators=trees,
 
@@ -627,31 +711,32 @@ model = RandomForestRegressor(
 )
 
 
-model.fit(
+world_model.fit(
     X_train,
     y_train
 )
 
 
 # ============================================================
-# VALIDATION
+# WORLD MODEL VALIDATION
 # ============================================================
 
-pred = model.predict(
-    X_test
+predictions = (
+    world_model
+    .predict(X_test)
 )
 
 
 mae = mean_absolute_error(
     y_test,
-    pred
+    predictions
 )
 
 
 rmse = np.sqrt(
     mean_squared_error(
         y_test,
-        pred
+        predictions
     )
 )
 
@@ -660,7 +745,7 @@ if len(y_test) > 1:
 
     r2 = r2_score(
         y_test,
-        pred
+        predictions
     )
 
 else:
@@ -669,10 +754,10 @@ else:
 
 
 # ============================================================
-# MBRL POLICY
+# ACTION SPACE
 #
-# Search for an education-spending target
-# that gives the lowest model-based cost.
+# Possible education expenditure targets
+# from 0.5% to 12% of GDP
 # ============================================================
 
 candidate_actions = np.arange(
@@ -682,21 +767,378 @@ candidate_actions = np.arange(
 )
 
 
-def calculate_mbrl_policy(row):
+# ============================================================
+# MBRL POLICY
+# ============================================================
+
+def mbrl_policy(row):
 
     # --------------------------------------------------------
-    # Estimate current state
+    # Current spending reference
     # --------------------------------------------------------
 
-    if pd.notna(row["Lag1"]):
+    if pd.notna(
+        row["Lag1"]
+    ):
 
-        lag = row["Lag1"]
+        current_level = (
+            row["Lag1"]
+        )
 
-    elif pd.notna(row["Roll3"]):
+    elif pd.notna(
+        row["Roll3"]
+    ):
 
-        lag = row["Roll3"]
+        current_level = (
+            row["Roll3"]
+        )
 
-    elif pd.notna(row["Actual_WB_GDP"]):
+    elif pd.notna(
+        row["Actual_WB_GDP"]
+    ):
 
-        lag = r
+        current_level = (
+            row["Actual_WB_GDP"]
+        )
+
+    else:
+
+        current_level = (
+            df["Actual_WB_GDP"]
+            .median()
+        )
+
+
+    candidate_scores = []
+
+
+    # --------------------------------------------------------
+    # Test each possible action
+    # --------------------------------------------------------
+
+    for action in candidate_actions:
+
+        state_action = {}
+
+
+        for feature in features:
+
+            if feature == "Action":
+
+                state_action[
+                    feature
+                ] = action
+
+            else:
+
+                state_action[
+                    feature
+                ] = row.get(
+                    feature,
+                    np.nan
+                )
+
+
+        test_row = pd.DataFrame(
+            [state_action],
+            columns=features
+        )
+
+
+        test_row = test_row.replace(
+            [np.inf, -np.inf],
+            np.nan
+        )
+
+
+        test_row = test_row.fillna(
+            feature_medians
+        )
+
+
+        test_row = test_row.fillna(0)
+
+
+        # ----------------------------------------------------
+        # Predict next education expenditure
+        # ----------------------------------------------------
+
+        predicted_next = (
+            world_model
+            .predict(test_row)[0]
+        )
+
+
+        # ----------------------------------------------------
+        # MBRL objective
+        # ----------------------------------------------------
+
+        prediction_error = (
+            predicted_next - action
+        ) ** 2
+
+
+        stability_penalty = (
+            action - current_level
+        ) ** 2
+
+
+        # Penalise unrealistically low expenditure
+        low_penalty = max(
+            0,
+            4 - action
+        ) ** 2
+
+
+        # Penalise unusually high expenditure
+        high_penalty = max(
+            0,
+            action - 8
+        ) ** 2
+
+
+        total_score = (
+
+            prediction_error
+
+            + 0.25
+            * stability_penalty
+
+            + 0.10
+            * (
+                low_penalty
+                + high_penalty
+            )
+        )
+
+
+        candidate_scores.append(
+            (
+                total_score,
+                action
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # Select lowest-cost policy action
+    # --------------------------------------------------------
+
+    best = min(
+        candidate_scores,
+        key=lambda value: value[0]
+    )
+
+
+    return float(
+        best[1]
+    )
+
+
+# ============================================================
+# CALCULATE MBRL-DERIVED % GDP
+# ============================================================
+
+mbrl_results = []
+
+
+for _, row in df.iterrows():
+
+    if pd.notna(
+        row["Actual_WB_GDP"]
+    ):
+
+        value = mbrl_policy(
+            row
+        )
+
+    else:
+
+        value = np.nan
+
+
+    mbrl_results.append(
+        value
+    )
+
+
+df["MBRL_Derived_GDP"] = (
+    mbrl_results
+)
+
+
+# ============================================================
+# CALCULATE DEVIATION
+#
+# D = ((Actual - MBRL) / MBRL) × 100
+# ============================================================
+
+df["Deviation"] = np.nan
+
+
+valid_rows = (
+
+    df["Actual_WB_GDP"].notna()
+
+    & df["MBRL_Derived_GDP"].notna()
+
+    & (
+        df["MBRL_Derived_GDP"] != 0
+    )
+)
+
+
+df.loc[
+    valid_rows,
+    "Deviation"
+] = (
+
+    (
+        df.loc[
+            valid_rows,
+            "Actual_WB_GDP"
+        ]
+
+        -
+
+        df.loc[
+            valid_rows,
+            "MBRL_Derived_GDP"
+        ]
+    )
+
+    /
+
+    df.loc[
+        valid_rows,
+        "MBRL_Derived_GDP"
+    ]
+
+) * 100
+
+
+# ============================================================
+# CLASSIFICATION
+#
+# FIXED 10% THRESHOLD
+# ============================================================
+
+def classify_spending(deviation):
+
+    if pd.isna(
+        deviation
+    ):
+
+        return "Not classified"
+
+
+    if deviation < -10:
+
+        return "Underspending"
+
+
+    if deviation > 10:
+
+        return "Overspending"
+
+
+    return "Normal Spending"
+
+
+df["State"] = (
+    df["Deviation"]
+    .apply(
+        classify_spending
+    )
+)
+
+
+# ============================================================
+# FINAL RESULTS
+# ============================================================
+
+results = df[
+    [
+        "Country",
+        "Year",
+        "Actual_WB_GDP",
+        "MBRL_Derived_GDP",
+        "Deviation",
+        "State"
+    ]
+].copy()
+
+
+results.columns = [
+
+    "Country",
+
+    "Year",
+
+    "Actual WB % GDP",
+
+    "MBRL-derived % GDP",
+
+    "Deviation",
+
+    "State"
+]
+
+
+# ============================================================
+# DISPLAY RESULTS
+# ============================================================
+
+st.subheader(
+    "MBRL Results"
+)
+
+
+display_results = (
+    results.copy()
+)
+
+
+display_results[
+    "Actual WB % GDP"
+] = (
+    display_results[
+        "Actual WB % GDP"
+    ].round(2)
+)
+
+
+display_results[
+    "MBRL-derived % GDP"
+] = (
+    display_results[
+        "MBRL-derived % GDP"
+    ].round(2)
+)
+
+
+display_results[
+    "Deviation"
+] = (
+    display_results[
+        "Deviation"
+    ].apply(
+        lambda value:
+        f"{value:+.2f}%"
+        if pd.notna(value)
+        else ""
+    )
+)
+
+
+st.dataframe(
+    display_results,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# ============================================================
+# CHECK CALCULATION
+# ==========================================
 ```
