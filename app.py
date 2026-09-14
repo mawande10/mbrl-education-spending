@@ -741,42 +741,49 @@ candidate_actions = np.arange(
 
 
 # ============================================================
-# MBRL POLICY
+# FAST MBRL POLICY
 # ============================================================
 
-def mbrl_policy(row):
+candidate_actions = np.arange(
+    0.5,
+    12.01,
+    0.1
+)
+
+
+def mbrl_policy_fast(row):
 
     # --------------------------------------------------------
-    # Determine current spending level
+    # Current spending
     # --------------------------------------------------------
 
     if pd.notna(row["Actual_WB_GDP"]):
 
-        current = float(
+        current_level = float(
             row["Actual_WB_GDP"]
         )
 
     elif pd.notna(row["Lag1"]):
 
-        current = float(
+        current_level = float(
             row["Lag1"]
         )
 
     elif pd.notna(row["Roll3"]):
 
-        current = float(
+        current_level = float(
             row["Roll3"]
         )
 
     else:
 
-        current = float(
+        current_level = float(
             df["Actual_WB_GDP"].median()
         )
 
 
     # --------------------------------------------------------
-    # Historical expected level
+    # Historical target
     # --------------------------------------------------------
 
     if pd.notna(row["Roll3"]):
@@ -785,132 +792,176 @@ def mbrl_policy(row):
             row["Roll3"]
         )
 
-    elif pd.notna(row["Lag1"]):
-
-        historical_target = float(
-            row["Lag1"]
-        )
-
     else:
 
-        historical_target = current
-
-
-    scores = []
+        historical_target = current_level
 
 
     # --------------------------------------------------------
-    # Model-based policy search
+    # CREATE ALL CANDIDATE ACTIONS AT ONCE
     # --------------------------------------------------------
 
-    for action in candidate_actions:
-
-        state_action = {}
-
-        for feature in features:
-
-            if feature == "Action":
-
-                state_action[feature] = action
-
-            else:
-
-                state_action[feature] = (
-                    row[feature]
-                    if feature in row.index
-                    else np.nan
+    candidate_data = pd.DataFrame(
+        {
+            feature:
+            [
+                (
+                    action
+                    if feature == "Action"
+                    else row.get(
+                        feature,
+                        np.nan
+                    )
                 )
 
+                for action in candidate_actions
+            ]
 
-        test_row = pd.DataFrame(
-            [state_action],
-            columns=features
-        )
-
-
-        test_row = test_row.replace(
-            [np.inf, -np.inf],
-            np.nan
-        )
-
-
-        test_row = test_row.fillna(
-            feature_medians
-        )
-
-
-        test_row = test_row.fillna(0)
-
-
-        # ----------------------------------------------------
-        # WORLD MODEL PREDICTION
-        # ----------------------------------------------------
-
-        predicted_next = float(
-            world_model.predict(
-                test_row
-            )[0]
-        )
-
-
-        # ----------------------------------------------------
-        # POLICY OBJECTIVE
-        #
-        # 1. Predicted spending should support action
-        # 2. Avoid unnecessary jumps
-        # 3. Remain close to historical trajectory
-        # ----------------------------------------------------
-
-        model_consistency = (
-            predicted_next - action
-        ) ** 2
-
-
-        adjustment_cost = (
-            action - current
-        ) ** 2
-
-
-        trajectory_cost = (
-            action - historical_target
-        ) ** 2
-
-
-        total_cost = (
-
-            1.00
-            * model_consistency
-
-            + 0.20
-            * adjustment_cost
-
-            + 0.20
-            * trajectory_cost
-        )
-
-
-        scores.append(
-            (
-                total_cost,
-                action
-            )
-        )
+            for feature in features
+        }
+    )
 
 
     # --------------------------------------------------------
-    # BEST POLICY ACTION
+    # CLEAN
     # --------------------------------------------------------
 
-    best_action = min(
-        scores,
-        key=lambda x: x[0]
-    )[1]
+    candidate_data = candidate_data.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+
+    candidate_data = candidate_data.fillna(
+        feature_medians
+    )
+
+
+    candidate_data = candidate_data.fillna(
+        0
+    )
+
+
+    # --------------------------------------------------------
+    # PREDICT ALL ACTIONS IN ONE CALL
+    # --------------------------------------------------------
+
+    predicted_next = world_model.predict(
+        candidate_data
+    )
+
+
+    # --------------------------------------------------------
+    # MODEL CONSISTENCY
+    # --------------------------------------------------------
+
+    prediction_error = (
+        predicted_next
+        - candidate_actions
+    ) ** 2
+
+
+    # --------------------------------------------------------
+    # STABILITY PENALTY
+    # --------------------------------------------------------
+
+    stability_penalty = (
+        candidate_actions
+        - current_level
+    ) ** 2
+
+
+    # --------------------------------------------------------
+    # HISTORICAL TRAJECTORY
+    # --------------------------------------------------------
+
+    trajectory_penalty = (
+        candidate_actions
+        - historical_target
+    ) ** 2
+
+
+    # --------------------------------------------------------
+    # TOTAL POLICY COST
+    # --------------------------------------------------------
+
+    total_cost = (
+
+        prediction_error
+
+        + 0.20
+        * stability_penalty
+
+        + 0.20
+        * trajectory_penalty
+    )
+
+
+    # --------------------------------------------------------
+    # BEST ACTION
+    # --------------------------------------------------------
+
+    best_index = np.argmin(
+        total_cost
+    )
 
 
     return float(
-        best_action
+        candidate_actions[
+            best_index
+        ]
     )
 
+
+# ============================================================
+# RUN MBRL OPTIMISATION
+# ============================================================
+
+with st.spinner(
+    "Running fast MBRL policy optimisation..."
+):
+
+    mbrl_values = []
+
+    for _, row in df.iterrows():
+
+        if pd.notna(
+            row["Actual_WB_GDP"]
+        ):
+
+            value = mbrl_policy_fast(
+                row
+            )
+
+        else:
+
+            value = np.nan
+
+        mbrl_values.append(
+            value
+        )
+
+
+df["MBRL_Derived_GDP"] = (
+    mbrl_values
+)
+
+
+# ============================================================
+# CHECK THAT MBRL CALCULATED
+# ============================================================
+
+number_mbrl = int(
+    df["MBRL_Derived_GDP"]
+    .notna()
+    .sum()
+)
+
+
+st.success(
+    f"MBRL optimisation completed: "
+    f"{number_mbrl} MBRL values calculated."
+)
 
 # ============================================================
 # CALCULATE MBRL TARGET
