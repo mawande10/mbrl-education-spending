@@ -1,4 +1,3 @@
-
 import io
 import numpy as np
 import pandas as pd
@@ -9,7 +8,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 # ============================================================
-# STREAMLIT PAGE
+# PAGE
 # ============================================================
 
 st.set_page_config(
@@ -21,35 +20,39 @@ st.title("MBRL Education Spending Assessment")
 
 st.write(
     "World Bank Education Spending → "
+    "MBRL World Model → Policy Optimisation → "
     "MBRL-derived % GDP → Deviation → Spending State"
 )
 
 
 # ============================================================
-# MBRL PARAMETERS
+# PARAMETERS
 # ============================================================
 
-TAU = 0.10
+TAU = 10.0
 
-st.sidebar.header("Model Parameters")
+st.sidebar.header("MBRL Parameters")
 
 trees = st.sidebar.slider(
     "World-model trees",
-    min_value=100,
-    max_value=800,
-    value=400,
-    step=50
+    100,
+    800,
+    400,
+    50
 )
 
-st.sidebar.write("Classification threshold: ±10%")
+st.sidebar.metric(
+    "Classification threshold",
+    "±10%"
+)
 
 
 # ============================================================
-# EXCEL UPLOAD
+# FILE UPLOAD
 # ============================================================
 
 uploaded_file = st.file_uploader(
-    "Upload Top 5 African Countries Excel Dataset",
+    "Upload Excel dataset",
     type=["xlsx"]
 )
 
@@ -64,12 +67,14 @@ ALIASES = {
         "Country",
         "Country Name",
         "country",
-        "geoUnit"
+        "geoUnit",
+        "Country_Name"
     ],
 
     "Year": [
         "Year",
-        "year"
+        "year",
+        "YEAR"
     ],
 
     "Actual": [
@@ -118,31 +123,31 @@ ALIASES = {
 # FIND COLUMN
 # ============================================================
 
-def find_column(dataframe, possible_names):
+def find_column(dataframe, names):
 
-    columns = {
-        str(column).strip().lower(): column
-        for column in dataframe.columns
+    lookup = {
+        str(c).strip().lower(): c
+        for c in dataframe.columns
     }
 
-    for name in possible_names:
+    for name in names:
 
-        key = name.strip().lower()
+        key = str(name).strip().lower()
 
-        if key in columns:
-            return columns[key]
+        if key in lookup:
+            return lookup[key]
 
     return None
 
 
 # ============================================================
-# NO FILE UPLOADED
+# WAIT FOR FILE
 # ============================================================
 
 if uploaded_file is None:
 
     st.info(
-        "Upload an Excel file containing at least "
+        "Upload an Excel file containing "
         "Country, Year and Actual WB % GDP."
     )
 
@@ -150,28 +155,28 @@ if uploaded_file is None:
         "Country": [
             "South Africa",
             "South Africa",
+            "South Africa",
             "Egypt",
             "Egypt",
-            "Nigeria",
             "Nigeria"
         ],
 
         "Year": [
             2020,
             2021,
+            2022,
             2020,
             2021,
-            2020,
-            2021
+            2020
         ],
 
         "Actual WB % GDP": [
             6.20,
             5.90,
+            5.50,
             4.80,
             4.50,
-            1.70,
-            1.90
+            1.70
         ]
     })
 
@@ -193,25 +198,35 @@ if uploaded_file is None:
 try:
 
     raw = pd.read_excel(
-        uploaded_file
+        uploaded_file,
+        engine="openpyxl"
     )
 
 except Exception as error:
 
     st.error(
-        f"Unable to read the Excel file: {error}"
+        f"Excel could not be read: {error}"
+    )
+
+    st.stop()
+
+
+if raw.empty:
+
+    st.error(
+        "The Excel workbook contains no data."
     )
 
     st.stop()
 
 
 st.success(
-    f"Excel uploaded successfully: {len(raw)} rows"
+    f"Excel uploaded successfully — {len(raw)} rows."
 )
 
 
 # ============================================================
-# SHOW ORIGINAL COLUMNS
+# ORIGINAL COLUMNS
 # ============================================================
 
 with st.expander("View uploaded Excel columns"):
@@ -241,36 +256,27 @@ actual_column = find_column(
 )
 
 
-missing_columns = []
-
+missing = []
 
 if country_column is None:
-    missing_columns.append(
-        "Country"
-    )
-
+    missing.append("Country")
 
 if year_column is None:
-    missing_columns.append(
-        "Year"
-    )
-
+    missing.append("Year")
 
 if actual_column is None:
-    missing_columns.append(
-        "Actual WB % GDP"
-    )
+    missing.append("Actual WB % GDP")
 
 
-if missing_columns:
+if missing:
 
     st.error(
-        "Required columns not found: "
-        + ", ".join(missing_columns)
+        "The following required columns were not found: "
+        + ", ".join(missing)
     )
 
     st.write(
-        "Your Excel contains these columns:"
+        "Columns detected in your Excel:"
     )
 
     st.write(
@@ -281,7 +287,7 @@ if missing_columns:
 
 
 # ============================================================
-# STANDARDISE REQUIRED COLUMNS
+# STANDARDISE
 # ============================================================
 
 df = raw.rename(
@@ -294,7 +300,7 @@ df = raw.rename(
 
 
 # ============================================================
-# FIND OPTIONAL VARIABLES
+# OPTIONAL VARIABLES
 # ============================================================
 
 for variable in [
@@ -323,7 +329,7 @@ for variable in [
 
 
 # ============================================================
-# CLEAN REQUIRED VARIABLES
+# CLEAN DATA
 # ============================================================
 
 df["Country"] = (
@@ -345,20 +351,13 @@ df["Actual_WB_GDP"] = pd.to_numeric(
 )
 
 
-# ============================================================
-# CLEAN OPTIONAL VARIABLES
-# ============================================================
-
-optional_columns = [
+for column in [
     "GDP",
     "GDP_Growth",
     "GDP_pc",
     "Population",
     "EduGov"
-]
-
-
-for column in optional_columns:
+]:
 
     if column in df.columns:
 
@@ -369,23 +368,21 @@ for column in optional_columns:
 
 
 # ============================================================
-# REMOVE INVALID YEARS
+# REMOVE INVALID ROWS
 # ============================================================
+
+df = df[
+    df["Country"].notna()
+].copy()
+
 
 df = df[
     df["Year"].notna()
 ].copy()
 
 
-df["Year"] = (
-    df["Year"]
-    .astype(int)
-)
+df["Year"] = df["Year"].astype(int)
 
-
-# ============================================================
-# SORT DATA
-# ============================================================
 
 df = (
     df
@@ -400,32 +397,46 @@ df = (
 # DATA SUMMARY
 # ============================================================
 
-number_countries = (
-    df["Country"]
-    .nunique()
-)
+n_countries = df["Country"].nunique()
 
-number_years = (
-    df["Year"]
-    .nunique()
-)
+n_years = df["Year"].nunique()
 
-number_valid = (
-    df["Actual_WB_GDP"]
-    .notna()
-    .sum()
-)
-
+n_valid = df["Actual_WB_GDP"].notna().sum()
 
 st.info(
-    f"Countries: {number_countries} | "
-    f"Years: {number_years} | "
-    f"Valid WB observations: {number_valid}"
+    f"Countries: {n_countries} | "
+    f"Years: {n_years} | "
+    f"Valid WB observations: {n_valid}"
 )
 
 
 # ============================================================
-# CREATE LAG FEATURES
+# CHECK DATA
+# ============================================================
+
+if n_valid < 5:
+
+    st.error(
+        "At least 5 valid Actual WB % GDP observations "
+        "are required."
+    )
+
+    st.dataframe(
+        df[
+            [
+                "Country",
+                "Year",
+                "Actual_WB_GDP"
+            ]
+        ],
+        use_container_width=True
+    )
+
+    st.stop()
+
+
+# ============================================================
+# LAG FEATURES
 # ============================================================
 
 grouped = df.groupby(
@@ -449,11 +460,10 @@ df["Lag2"] = (
 df["Roll3"] = (
     grouped["Actual_WB_GDP"]
     .transform(
-        lambda series:
-        series
-        .shift(1)
+        lambda s:
+        s.shift(1)
         .rolling(
-            window=3,
+            3,
             min_periods=1
         )
         .mean()
@@ -462,22 +472,22 @@ df["Roll3"] = (
 
 
 # ============================================================
-# NORMALISED YEAR
+# YEAR FEATURE
 # ============================================================
 
-minimum_year = df["Year"].min()
+min_year = df["Year"].min()
 
-maximum_year = df["Year"].max()
+max_year = df["Year"].max()
 
-year_difference = max(
+year_range = max(
     1,
-    maximum_year - minimum_year
+    max_year - min_year
 )
 
 
 df["YearNorm"] = (
-    (df["Year"] - minimum_year)
-    / year_difference
+    (df["Year"] - min_year)
+    / year_range
 )
 
 
@@ -485,24 +495,25 @@ df["YearNorm"] = (
 # OPTIONAL FEATURES
 # ============================================================
 
-extra_features = [
+extra_features = []
 
-    column
+for column in [
+    "GDP",
+    "GDP_Growth",
+    "GDP_pc",
+    "Population",
+    "EduGov"
+]:
 
-    for column in [
-        "GDP",
-        "GDP_Growth",
-        "GDP_pc",
-        "Population",
-        "EduGov"
-    ]
+    if column in df.columns:
 
-    if column in df.columns
-]
+        extra_features.append(
+            column
+        )
 
 
 # ============================================================
-# MBRL WORLD MODEL FEATURES
+# WORLD MODEL
 # ============================================================
 
 features = [
@@ -515,100 +526,91 @@ features = [
 
 
 # ============================================================
-# BUILD TRANSITIONS
+# CREATE TRANSITIONS
 #
-# State(t) + Action(t)
+# STATE(t) + ACTION(t)
 #          ↓
-# World Model
+# WORLD MODEL
 #          ↓
-# Education Spending(t+1)
+# SPENDING(t+1)
 # ============================================================
 
 transition_rows = []
 
 
-for country, country_data in df.groupby(
+for country, data in df.groupby(
     "Country"
 ):
 
-    country_data = (
-        country_data
+    data = (
+        data
         .sort_values("Year")
         .reset_index(drop=True)
     )
 
-
     for i in range(
-        len(country_data) - 1
+        len(data) - 1
     ):
 
-        current = country_data.iloc[i]
+        current = data.iloc[i]
 
-        next_row = country_data.iloc[i + 1]
-
+        next_row = data.iloc[i + 1]
 
         if pd.isna(
             current["Actual_WB_GDP"]
         ):
-
             continue
-
 
         if pd.isna(
             next_row["Actual_WB_GDP"]
         ):
-
             continue
 
-
-        row = {}
-
+        transition = {}
 
         for feature in features:
 
             if feature == "Action":
 
-                row[feature] = (
+                transition[feature] = (
                     current["Actual_WB_GDP"]
                 )
 
             else:
 
-                row[feature] = current.get(
-                    feature,
-                    np.nan
+                transition[feature] = (
+                    current[feature]
+                    if feature in current.index
+                    else np.nan
                 )
 
-
-        row["Target"] = (
+        transition["Target"] = (
             next_row["Actual_WB_GDP"]
         )
 
-
         transition_rows.append(
-            row
+            transition
         )
 
-
-# ============================================================
-# TRANSITION DATAFRAME
-# ============================================================
 
 transitions = pd.DataFrame(
     transition_rows
 )
 
 
+# ============================================================
+# TRANSITION CHECK
+# ============================================================
+
 if len(transitions) < 5:
 
     st.error(
         f"Only {len(transitions)} usable "
-        "transitions were created."
+        "year-to-year transitions were found."
     )
 
     st.warning(
-        "The dataset needs at least 5 usable "
-        "year-to-year observations."
+        "The file needs multiple years per country."
     )
 
     st.stop()
@@ -640,13 +642,7 @@ X = X.replace(
 )
 
 
-# ============================================================
-# MEDIAN IMPUTATION
-# ============================================================
-
-feature_medians = X.median(
-    numeric_only=True
-)
+feature_medians = X.median()
 
 
 X = X.fillna(
@@ -658,55 +654,36 @@ X = X.fillna(0)
 
 
 # ============================================================
-# TRAIN / TEST SPLIT
+# TRAIN WORLD MODEL
 # ============================================================
 
-split_point = int(
+split = int(
     len(X) * 0.80
 )
 
 
-split_point = max(
+split = max(
     1,
     min(
-        split_point,
+        split,
         len(X) - 1
     )
 )
 
 
-X_train = X.iloc[
-    :split_point
-]
+X_train = X.iloc[:split]
 
+X_test = X.iloc[split:]
 
-X_test = X.iloc[
-    split_point:
-]
+y_train = y.iloc[:split]
 
+y_test = y.iloc[split:]
 
-y_train = y.iloc[
-    :split_point
-]
-
-
-y_test = y.iloc[
-    split_point:
-]
-
-
-# ============================================================
-# RANDOM FOREST WORLD MODEL
-# ============================================================
 
 world_model = RandomForestRegressor(
-
     n_estimators=trees,
-
     random_state=42,
-
     min_samples_leaf=1,
-
     n_jobs=-1
 )
 
@@ -718,12 +695,11 @@ world_model.fit(
 
 
 # ============================================================
-# WORLD MODEL VALIDATION
+# VALIDATION
 # ============================================================
 
-predictions = (
-    world_model
-    .predict(X_test)
+predictions = world_model.predict(
+    X_test
 )
 
 
@@ -755,9 +731,6 @@ else:
 
 # ============================================================
 # ACTION SPACE
-#
-# Possible education expenditure targets
-# from 0.5% to 12% of GDP
 # ============================================================
 
 candidate_actions = np.arange(
@@ -774,68 +747,78 @@ candidate_actions = np.arange(
 def mbrl_policy(row):
 
     # --------------------------------------------------------
-    # Current spending reference
+    # Determine current spending level
     # --------------------------------------------------------
 
-    if pd.notna(
-        row["Lag1"]
-    ):
+    if pd.notna(row["Actual_WB_GDP"]):
 
-        current_level = (
+        current = float(
+            row["Actual_WB_GDP"]
+        )
+
+    elif pd.notna(row["Lag1"]):
+
+        current = float(
             row["Lag1"]
         )
 
-    elif pd.notna(
-        row["Roll3"]
-    ):
+    elif pd.notna(row["Roll3"]):
 
-        current_level = (
+        current = float(
             row["Roll3"]
-        )
-
-    elif pd.notna(
-        row["Actual_WB_GDP"]
-    ):
-
-        current_level = (
-            row["Actual_WB_GDP"]
         )
 
     else:
 
-        current_level = (
-            df["Actual_WB_GDP"]
-            .median()
+        current = float(
+            df["Actual_WB_GDP"].median()
         )
 
 
-    candidate_scores = []
+    # --------------------------------------------------------
+    # Historical expected level
+    # --------------------------------------------------------
+
+    if pd.notna(row["Roll3"]):
+
+        historical_target = float(
+            row["Roll3"]
+        )
+
+    elif pd.notna(row["Lag1"]):
+
+        historical_target = float(
+            row["Lag1"]
+        )
+
+    else:
+
+        historical_target = current
+
+
+    scores = []
 
 
     # --------------------------------------------------------
-    # Test each possible action
+    # Model-based policy search
     # --------------------------------------------------------
 
     for action in candidate_actions:
 
         state_action = {}
 
-
         for feature in features:
 
             if feature == "Action":
 
-                state_action[
-                    feature
-                ] = action
+                state_action[feature] = action
 
             else:
 
-                state_action[
-                    feature
-                ] = row.get(
-                    feature,
-                    np.nan
+                state_action[feature] = (
+                    row[feature]
+                    if feature in row.index
+                    else np.nan
                 )
 
 
@@ -860,115 +843,111 @@ def mbrl_policy(row):
 
 
         # ----------------------------------------------------
-        # Predict next education expenditure
+        # WORLD MODEL PREDICTION
         # ----------------------------------------------------
 
-        predicted_next = (
-            world_model
-            .predict(test_row)[0]
+        predicted_next = float(
+            world_model.predict(
+                test_row
+            )[0]
         )
 
 
         # ----------------------------------------------------
-        # MBRL objective
+        # POLICY OBJECTIVE
+        #
+        # 1. Predicted spending should support action
+        # 2. Avoid unnecessary jumps
+        # 3. Remain close to historical trajectory
         # ----------------------------------------------------
 
-        prediction_error = (
+        model_consistency = (
             predicted_next - action
         ) ** 2
 
 
-        stability_penalty = (
-            action - current_level
+        adjustment_cost = (
+            action - current
         ) ** 2
 
 
-        # Penalise unrealistically low expenditure
-        low_penalty = max(
-            0,
-            4 - action
+        trajectory_cost = (
+            action - historical_target
         ) ** 2
 
 
-        # Penalise unusually high expenditure
-        high_penalty = max(
-            0,
-            action - 8
-        ) ** 2
+        total_cost = (
 
+            1.00
+            * model_consistency
 
-        total_score = (
+            + 0.20
+            * adjustment_cost
 
-            prediction_error
-
-            + 0.25
-            * stability_penalty
-
-            + 0.10
-            * (
-                low_penalty
-                + high_penalty
-            )
+            + 0.20
+            * trajectory_cost
         )
 
 
-        candidate_scores.append(
+        scores.append(
             (
-                total_score,
+                total_cost,
                 action
             )
         )
 
 
     # --------------------------------------------------------
-    # Select lowest-cost policy action
+    # BEST POLICY ACTION
     # --------------------------------------------------------
 
-    best = min(
-        candidate_scores,
-        key=lambda value: value[0]
-    )
+    best_action = min(
+        scores,
+        key=lambda x: x[0]
+    )[1]
 
 
     return float(
-        best[1]
+        best_action
     )
 
 
 # ============================================================
-# CALCULATE MBRL-DERIVED % GDP
+# CALCULATE MBRL TARGET
 # ============================================================
 
-mbrl_results = []
+with st.spinner(
+    "Running MBRL policy optimisation..."
+):
 
+    mbrl_values = []
 
-for _, row in df.iterrows():
+    for _, row in df.iterrows():
 
-    if pd.notna(
-        row["Actual_WB_GDP"]
-    ):
+        if pd.notna(
+            row["Actual_WB_GDP"]
+        ):
 
-        value = mbrl_policy(
-            row
+            value = mbrl_policy(
+                row
+            )
+
+        else:
+
+            value = np.nan
+
+        mbrl_values.append(
+            value
         )
-
-    else:
-
-        value = np.nan
-
-
-    mbrl_results.append(
-        value
-    )
 
 
 df["MBRL_Derived_GDP"] = (
-    mbrl_results
+    mbrl_values
 )
 
 
 # ============================================================
-# CALCULATE DEVIATION
+# DEVIATION
 #
 # D = ((Actual - MBRL) / MBRL) × 100
 # ============================================================
@@ -976,33 +955,35 @@ df["MBRL_Derived_GDP"] = (
 df["Deviation"] = np.nan
 
 
-valid_rows = (
+valid = (
 
     df["Actual_WB_GDP"].notna()
 
-    & df["MBRL_Derived_GDP"].notna()
+    &
 
-    & (
-        df["MBRL_Derived_GDP"] != 0
-    )
+    df["MBRL_Derived_GDP"].notna()
+
+    &
+
+    (df["MBRL_Derived_GDP"] != 0)
 )
 
 
 df.loc[
-    valid_rows,
+    valid,
     "Deviation"
 ] = (
 
     (
         df.loc[
-            valid_rows,
+            valid,
             "Actual_WB_GDP"
         ]
 
         -
 
         df.loc[
-            valid_rows,
+            valid,
             "MBRL_Derived_GDP"
         ]
     )
@@ -1010,7 +991,7 @@ df.loc[
     /
 
     df.loc[
-        valid_rows,
+        valid,
         "MBRL_Derived_GDP"
     ]
 
@@ -1019,37 +1000,33 @@ df.loc[
 
 # ============================================================
 # CLASSIFICATION
-#
-# FIXED 10% THRESHOLD
 # ============================================================
 
-def classify_spending(deviation):
+def classify(value):
 
-    if pd.isna(
-        deviation
-    ):
+    if pd.isna(value):
 
         return "Not classified"
 
 
-    if deviation < -10:
+    if value < -TAU:
 
         return "Underspending"
 
 
-    if deviation > 10:
+    elif value > TAU:
 
         return "Overspending"
 
 
-    return "Normal Spending"
+    else:
+
+        return "Normal Spending"
 
 
 df["State"] = (
     df["Deviation"]
-    .apply(
-        classify_spending
-    )
+    .apply(classify)
 )
 
 
@@ -1070,23 +1047,66 @@ results = df[
 
 
 results.columns = [
-
     "Country",
-
     "Year",
-
     "Actual WB % GDP",
-
     "MBRL-derived % GDP",
-
     "Deviation",
-
     "State"
 ]
 
 
 # ============================================================
-# DISPLAY RESULTS
+# CALCULATION CHECK
+# ============================================================
+
+st.subheader(
+    "Calculation Check"
+)
+
+
+c1, c2, c3, c4 = st.columns(4)
+
+
+c1.metric(
+    "Rows",
+    len(results)
+)
+
+
+c2.metric(
+    "MBRL calculated",
+    int(
+        results[
+            "MBRL-derived % GDP"
+        ].notna().sum()
+    )
+)
+
+
+c3.metric(
+    "Deviation calculated",
+    int(
+        results[
+            "Deviation"
+        ].notna().sum()
+    )
+)
+
+
+c4.metric(
+    "Classified",
+    int(
+        (
+            results["State"]
+            != "Not classified"
+        ).sum()
+    )
+)
+
+
+# ============================================================
+# RESULTS TABLE
 # ============================================================
 
 st.subheader(
@@ -1094,40 +1114,32 @@ st.subheader(
 )
 
 
-display_results = (
-    results.copy()
-)
+display_results = results.copy()
 
 
 display_results[
     "Actual WB % GDP"
-] = (
-    display_results[
-        "Actual WB % GDP"
-    ].round(2)
-)
+] = display_results[
+    "Actual WB % GDP"
+].round(2)
 
 
 display_results[
     "MBRL-derived % GDP"
-] = (
-    display_results[
-        "MBRL-derived % GDP"
-    ].round(2)
-)
+] = display_results[
+    "MBRL-derived % GDP"
+].round(2)
 
 
 display_results[
     "Deviation"
-] = (
-    display_results[
-        "Deviation"
-    ].apply(
-        lambda value:
-        f"{value:+.2f}%"
-        if pd.notna(value)
-        else ""
-    )
+] = display_results[
+    "Deviation"
+].apply(
+    lambda x:
+    f"{x:+.2f}%"
+    if pd.notna(x)
+    else ""
 )
 
 
@@ -1139,6 +1151,143 @@ st.dataframe(
 
 
 # ============================================================
-# CHECK CALCULATION
-# ==========================================
+# STATE SUMMARY
+# ============================================================
 
+st.subheader(
+    "Spending State Summary"
+)
+
+
+state_counts = (
+    results["State"]
+    .value_counts()
+    .rename_axis("State")
+    .reset_index(name="Number of observations")
+)
+
+
+st.dataframe(
+    state_counts,
+    use_container_width=True,
+    hide_index=True
+)
+
+
+# ============================================================
+# WORLD MODEL VALIDATION
+# ============================================================
+
+st.subheader(
+    "World Model Validation"
+)
+
+
+v1, v2, v3 = st.columns(3)
+
+
+v1.metric(
+    "MAE",
+    f"{mae:.4f}"
+)
+
+
+v2.metric(
+    "RMSE",
+    f"{rmse:.4f}"
+)
+
+
+if pd.notna(r2):
+
+    v3.metric(
+        "R²",
+        f"{r2:.4f}"
+    )
+
+else:
+
+    v3.metric(
+        "R²",
+        "N/A"
+    )
+
+
+# ============================================================
+# DOWNLOAD EXCEL
+# ============================================================
+
+st.subheader(
+    "Download Results"
+)
+
+
+buffer = io.BytesIO()
+
+
+with pd.ExcelWriter(
+    buffer,
+    engine="openpyxl"
+) as writer:
+
+    results.to_excel(
+        writer,
+        index=False,
+        sheet_name="MBRL Results"
+    )
+
+
+    methodology = pd.DataFrame({
+
+        "Parameter": [
+
+            "World Bank indicator",
+
+            "MBRL-derived value",
+
+            "Deviation",
+
+            "Threshold",
+
+            "Underspending",
+
+            "Normal Spending",
+
+            "Overspending"
+
+        ],
+
+        "Definition": [
+
+            "SE.XPD.TOTL.GD.ZS",
+
+            "Policy-selected education expenditure target as % of GDP",
+
+            "((Actual - MBRL) / MBRL) × 100",
+
+            "±10%",
+
+            "Deviation < -10%",
+
+            "-10% ≤ Deviation ≤ +10%",
+
+            "Deviation > +10%"
+
+        ]
+
+    })
+
+
+    methodology.to_excel(
+        writer,
+        index=False,
+        sheet_name="Methodology"
+    )
+
+
+st.download_button(
+    label="Download MBRL Results Excel",
+    data=buffer.getvalue(),
+    file_name="MBRL_Education_Spending_Results.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
