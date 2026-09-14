@@ -151,5 +151,17 @@ buf = io.BytesIO()
 with pd.ExcelWriter(buf, engine='openpyxl') as w:
     out.to_excel(w, index=False, sheet_name='MBRL Results')
     pd.DataFrame({
-        'Parameter':['τ','Deviation formula','Classification'],
-        'Value':[tau,'(Actual − MBRL)/MBRL × 100','D < −τ Underspending
+        'Parameter': ['τ','Deviation formula','Classification'],
+        'Value': [
+            tau,
+            '(Actual − MBRL)/MBRL × 100',
+            f'D < −{tau:.0%} Underspending; −{tau:.0%} ≤ D ≤ {tau:.0%} Normal; D > {tau:.0%} Overspending'
+        ]
+    }).to_excel(w, index=False, sheet_name='Methodology')
+
+st.download_button(
+    'Download MBRL Excel Results',
+    buf.getvalue(),
+    'MBRL_Education_Spending_Results.xlsx'
+)
+
